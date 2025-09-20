@@ -7,7 +7,7 @@ from jaxtyping import Array, Float, PRNGKeyArray
 from jaxonlayers.functions import default_floating_dtype, selective_scan
 
 
-class SelectiveStateSpaceModel(eqx.Module):
+class SelectiveStateSpace(eqx.Module):
     input_proj: eqx.nn.Linear
     delta_proj: eqx.nn.Linear
     A_log: Float[Array, "d_inner d_state"]
