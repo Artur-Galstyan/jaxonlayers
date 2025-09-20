@@ -1,0 +1,20 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.1
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.405
+    hooks:
+      - id: pyright
+        additional_dependencies:
+          - beartype>=0.21.0
+          - equinox>=0.13.0
+          - jax>=0.7.2
+          - jaxtyping>=0.3.2
+          - pytest>=8.4.2
+          - statedict2pytree>=1.0.1
+          - torchvision>=0.23.0
+          - torch>=2.8.0
