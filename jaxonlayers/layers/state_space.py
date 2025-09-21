@@ -11,14 +11,17 @@ class SelectiveStateSpace(eqx.Module):
     input_proj: eqx.nn.Linear
     delta_proj: eqx.nn.Linear
     A_log: Float[Array, "d_inner d_state"]
-    D: Float[Array, " d_inner"]
+    D: Float[Array, "d_inner"]
+    out_proj: eqx.nn.Linear
 
     d_inner: int = eqx.field(static=True)
     dt_rank: int = eqx.field(static=True)
     d_state: int = eqx.field(static=True)
+    d_model: int = eqx.field(static=True)
 
     def __init__(
         self,
+        d_model: int,
         d_inner: int,
         dt_rank: int,
         d_state: int,
@@ -31,19 +34,19 @@ class SelectiveStateSpace(eqx.Module):
         if dtype is None:
             dtype = default_floating_dtype()
         assert dtype is not None
+
+        self.d_model = d_model
         self.d_inner = d_inner
         self.dt_rank = dt_rank
         self.d_state = d_state
-        (
-            key,
-            input_proj_key,
-            delta_proj_key,
-        ) = jax.random.split(key, 3)
+
+        keys = jax.random.split(key, 4)
+
         self.input_proj = eqx.nn.Linear(
             d_inner,
             dt_rank + d_state * 2,
             use_bias=use_input_proj_bias,
-            key=input_proj_key,
+            key=keys[0],
             dtype=dtype,
         )
 
@@ -51,25 +54,36 @@ class SelectiveStateSpace(eqx.Module):
             dt_rank,
             d_inner,
             use_bias=use_delta_proj_bias,
-            key=delta_proj_key,
+            key=keys[1],
             dtype=dtype,
         )
-        A = jnp.repeat(jnp.arange(1, d_state + 1), d_inner).reshape(d_inner, d_state)
+
+        A = jnp.arange(1, d_state + 1, dtype=jnp.float32)
+        A = jnp.tile(A, (d_inner, 1))
         self.A_log = jnp.log(A)
+
         self.D = jnp.ones(d_inner, dtype=dtype)
 
+        self.out_proj = eqx.nn.Linear(
+            d_inner, d_model, use_bias=False, key=keys[2], dtype=dtype
+        )
+
     def __call__(self, x: Float[Array, "seq_length d_inner"]):
-        A = -jnp.exp(self.A_log)
-        D = self.D
+        L, _ = x.shape
+        A = -jnp.exp(self.A_log.astype(jnp.float32))
+        D = self.D.astype(jnp.float32)
 
         delta_b_c = jax.vmap(self.input_proj)(x)
 
-        split_indices = [
-            self.dt_rank,
-            self.dt_rank + self.d_state,
-        ]
-        delta, B, C = jnp.split(delta_b_c, split_indices, axis=-1)
+        delta, B, C = jnp.split(
+            delta_b_c, [self.dt_rank, self.dt_rank + self.d_state], axis=-1
+        )
+
+        B = B.reshape(L, 1, self.d_state).repeat(self.d_inner, axis=1)
+        C = C.reshape(L, 1, self.d_state).repeat(self.d_inner, axis=1)
+
         delta = jax.nn.softplus(jax.vmap(self.delta_proj)(delta))
 
         y = selective_scan(x, delta, A, B, C, D)
-        return y
+
+        return jax.vmap(self.out_proj)(y)

@@ -4,27 +4,28 @@ from jaxtyping import Array, Float
 
 
 def selective_scan(
-    x: Float[Array, "seq_length d_inner"],
+    u: Float[Array, "seq_length d_inner"],
     delta: Float[Array, "seq_length d_inner"],
     A: Float[Array, "d_inner d_state"],
-    B: Float[Array, "seq_length d_state"],
-    C: Float[Array, "seq_length d_state"],
-    D: Float[Array, " d_inner"],
+    B: Float[Array, "seq_length d_inner d_state"],
+    C: Float[Array, "seq_length d_inner d_state"],
+    D: Float[Array, "d_inner"],
 ) -> Float[Array, "seq_length d_inner"]:
-    L, d_inner = x.shape
+    L, d_inner = u.shape
     _, d_state = A.shape
-    delta_A = jnp.exp(jnp.einsum("l d,d n -> l d n", delta, A))
-    delta_B_u = jnp.einsum("l d,l n,l d -> l d n", delta, B, x)
 
-    x_res = jnp.zeros(shape=(d_inner, d_state))
+    deltaA = jnp.exp(jnp.einsum("l d, d n -> l d n", delta, A))
+    deltaB_u = jnp.einsum("l d, l d n, l d -> l d n", delta, B, u)
 
-    def step(x, i):
-        x = delta_A[i] * x + delta_B_u[i]
+    h0 = jnp.zeros((d_inner, d_state))
 
-        y = jnp.einsum("d n,n -> d", x, C[i, :])
-        return x, y
+    def step(h_prev, scan_inputs):
+        deltaA_i, deltaB_u_i, C_i = scan_inputs
+        h_i = deltaA_i * h_prev + deltaB_u_i
+        y_i = jnp.einsum("d n, d n -> d", h_i, C_i).real
+        return h_i, y_i
 
-    _, ys = jax.lax.scan(step, x_res, jnp.arange(L))
+    _, ys = jax.lax.scan(step, h0, (deltaA, deltaB_u, C))
 
-    ys = ys + x * D
+    ys = ys + u * D
     return ys
