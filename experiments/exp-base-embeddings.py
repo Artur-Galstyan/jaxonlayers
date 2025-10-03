@@ -1,6 +1,3 @@
-import hashlib
-import os
-
 import clu.metrics as clum
 import equinox as eqx
 import flax
@@ -9,18 +6,14 @@ import jax
 import jax.numpy as jnp
 import jaxtyping as jt
 import mlflow
-import numpy as np
 import optax
 import polars as pl
 import tensorflow_datasets as tfds
-from beartype.typing import Any
 from tqdm import tqdm
 
-from jaxonlayers.functions.utils import default_floating_dtype
 from jaxonlayers.layers.normalization import BatchNorm
-from jaxonlayers.layers.state_space import SelectiveStateSpace
 
-RUN_DESCRIPTION = "Using self-learned ssm embeddings + dropout + batch_norm + aggressive dropout usage + larger network"
+RUN_DESCRIPTION = "Using self-learned default embeddings + dropout + batch_norm + aggressive dropout usage + larger network"
 
 PERCENTILE = 90
 AMINO_ACIDS = "ACDEFGHIKLMNPQRSTVWY"
@@ -52,185 +45,6 @@ class LossMetrics(clum.Collection):
     accuracy: clum.Average.from_output("accuracy")  # pyright: ignore
 
 
-class MambaBlock(eqx.Module):
-    in_proj: eqx.nn.Linear
-    conv1d: eqx.nn.Conv1d
-    ssm: SelectiveStateSpace
-    out_proj: eqx.nn.Linear
-    norm: eqx.nn.LayerNorm
-
-    d_model: int = eqx.field(static=True)
-    d_inner: int = eqx.field(static=True)
-
-    def __init__(
-        self,
-        d_model: int,
-        d_inner: int,
-        dt_rank: int,
-        d_state: int,
-        conv_kernel_size: int = 4,
-        *,
-        key: jt.PRNGKeyArray,
-        dtype: Any | None = None,
-    ):
-        if dtype is None:
-            dtype = default_floating_dtype()
-        assert dtype is not None
-
-        self.d_model = d_model
-        self.d_inner = d_inner
-        keys = jax.random.split(key, 4)
-
-        self.in_proj = eqx.nn.Linear(
-            d_model, 2 * d_inner, use_bias=False, key=keys[0], dtype=dtype
-        )
-
-        self.conv1d = eqx.nn.Conv1d(
-            in_channels=d_inner,
-            out_channels=d_inner,
-            kernel_size=conv_kernel_size,
-            groups=d_inner,
-            padding=conv_kernel_size - 1,
-            key=keys[1],
-            dtype=dtype,
-        )
-
-        self.ssm = SelectiveStateSpace(
-            d_model=d_inner,
-            d_inner=d_inner,
-            dt_rank=dt_rank,
-            d_state=d_state,
-            key=keys[2],
-            dtype=dtype,
-        )
-
-        self.out_proj = eqx.nn.Linear(
-            d_inner, d_model, use_bias=False, key=keys[3], dtype=dtype
-        )
-
-        self.norm = eqx.nn.LayerNorm(d_model, eps=1e-5, dtype=dtype)
-
-    def __call__(self, x: jt.Float[jt.Array, "seq_length d_model"]):
-        seq_len, _ = x.shape
-        x_norm = eqx.filter_vmap(self.norm)(x)
-
-        x_proj = jax.vmap(self.in_proj)(x_norm)
-        main_path, gate = jnp.split(x_proj, 2, axis=-1)
-
-        main_path_transposed = main_path.T
-        main_path_conv = self.conv1d(main_path_transposed)
-        main_path_conv = main_path_conv[:, :seq_len]
-        main_path_conv = main_path_conv.T
-
-        main_path_activated = jax.nn.silu(main_path_conv)
-
-        y = self.ssm(main_path_activated)
-
-        gate_activated = jax.nn.silu(gate)
-        output = y * gate_activated
-
-        output = jax.vmap(self.out_proj)(output)
-
-        return x + output
-
-
-class BidirectionalMambaLayer(eqx.Module):
-    forward_block: MambaBlock
-    backward_block: MambaBlock
-
-    def __init__(
-        self,
-        d_model: int,
-        d_inner: int,
-        dt_rank: int,
-        d_state: int,
-        conv_kernel_size: int = 4,
-        *,
-        key: jt.PRNGKeyArray,
-        dtype: Any | None = None,
-    ):
-        fwd_key, bwd_key = jax.random.split(key)
-
-        self.forward_block = MambaBlock(
-            d_model=d_model,
-            d_inner=d_inner,
-            dt_rank=dt_rank,
-            d_state=d_state,
-            conv_kernel_size=conv_kernel_size,
-            key=fwd_key,
-            dtype=dtype,
-        )
-        self.backward_block = MambaBlock(
-            d_model=d_model,
-            d_inner=d_inner,
-            dt_rank=dt_rank,
-            d_state=d_state,
-            conv_kernel_size=conv_kernel_size,
-            key=bwd_key,
-            dtype=dtype,
-        )
-
-    def __call__(self, x: jt.Float[jt.Array, "seq_length d_model"], *, key):
-        fwd_out = self.forward_block(x)
-
-        x_rev = jnp.flip(x, axis=0)
-        bwd_out_rev = self.backward_block(x_rev)
-        bwd_out = jnp.flip(bwd_out_rev, axis=0)
-
-        return fwd_out + bwd_out
-
-
-class SSMEncoder(eqx.Module):
-    embedding: eqx.nn.Embedding
-    layers: eqx.nn.Sequential
-    norm: eqx.nn.LayerNorm
-
-    def __init__(
-        self,
-        num_layers: int,
-        vocab_size: int,
-        d_model: int,
-        d_inner: int,
-        dt_rank: int,
-        d_state: int,
-        conv_kernel_size: int = 4,
-        *,
-        key: jt.PRNGKeyArray,
-        dtype: Any | None = None,
-    ):
-        if dtype is None:
-            dtype = default_floating_dtype()
-        assert dtype is not None
-
-        keys = jax.random.split(key, num_layers + 1)
-
-        self.embedding = eqx.nn.Embedding(
-            num_embeddings=vocab_size, embedding_size=d_model, key=keys[0]
-        )
-
-        layer_list = []
-        for i in range(num_layers):
-            layer = BidirectionalMambaLayer(
-                d_model=d_model,
-                d_inner=d_inner,
-                dt_rank=dt_rank,
-                d_state=d_state,
-                conv_kernel_size=conv_kernel_size,
-                key=keys[i + 1],
-                dtype=dtype,
-            )
-            layer_list.append(layer)
-
-        self.layers = eqx.nn.Sequential(layer_list)
-        self.norm = eqx.nn.LayerNorm(d_model, eps=1e-5, dtype=dtype)
-
-    def __call__(self, x: jt.Int[jt.Array, " seq_length"]):
-        x_embed = jax.vmap(self.embedding)(x)
-        x_processed = self.layers(x_embed)
-        x_norm = eqx.filter_vmap(self.norm)(x_processed)
-        return x_norm
-
-
 class ProteinPreprocessor(grain.transforms.Map):
     def map(self, example):
         sequence = example["sequences"]
@@ -249,8 +63,7 @@ class ProteinPreprocessor(grain.transforms.Map):
 
 class SimpleModel(eqx.Module):
     mlp: eqx.nn.MLP
-    # embedding: eqx.nn.Embedding
-    encoder: SSMEncoder
+    embedding: eqx.nn.Embedding
 
     dropout: eqx.nn.Dropout
     linear: eqx.nn.Linear
@@ -259,40 +72,27 @@ class SimpleModel(eqx.Module):
     def __init__(
         self, n_vocab: int, embedding_size: int, out_features: int, key: jt.PRNGKeyArray
     ):
+        d_model = 256
         k1, k2, k3, k4 = jax.random.split(key, 4)
-        num_layers = 4
-        d_model = 64
-        d_inner = 128
-        d_state = 8
-        dt_rank = 8
-        self.encoder = SSMEncoder(
-            num_layers=num_layers,
-            vocab_size=n_vocab,
-            d_model=d_model,
-            d_inner=d_inner,
-            dt_rank=dt_rank,
-            d_state=d_state,
-            key=k3,
+        self.embedding = eqx.nn.Embedding(n_vocab, embedding_size, key=k2)
+        self.norm = BatchNorm(embedding_size, axis_name="batch")
+        self.mlp = eqx.nn.MLP(
+            embedding_size, d_model, width_size=d_model, depth=4, key=k1
         )
-
-        # self.embedding = eqx.nn.Embedding(n_vocab, embedding_size, key=k2)
-        self.norm = BatchNorm(d_model, axis_name="batch")
-        self.mlp = eqx.nn.MLP(d_model, d_model, width_size=d_model, depth=4, key=k1)
         self.dropout = eqx.nn.Dropout()
         self.linear = eqx.nn.Linear(d_model, out_features, key=k4)
 
     def __call__(
         self, x: jt.Float[jt.Array, " seq_len"], state: eqx.nn.State, key, inference
     ) -> tuple[jt.Array, eqx.nn.State]:
-        # x = eqx.filter_vmap(self.embedding)(x)
+        x = eqx.filter_vmap(self.embedding)(x)
+        x = jnp.mean(x, axis=0)
+        x, state = self.norm(x, state)
         if not inference and key is not None:
             key, *subkeys = jax.random.split(key, 3)
         else:
             key, subkeys = None, [None, None]
-        x = self.encoder(x)
         x = self.dropout(x, key=key, inference=inference)
-        x = jnp.mean(x, axis=0)
-        x, state = self.norm(x, state)
         x = self.dropout(x, key=subkeys[0], inference=inference)
         x = self.mlp(x)
         x = self.dropout(x, key=subkeys[1], inference=inference)
@@ -538,7 +338,7 @@ def main():
     out_features = 2
     embedding_size = 960  # this is from esm-c
     learning_rate = 3e-4
-    n_epochs = 20
+    n_epochs = 50
     batch_size = 128
 
     builder = tfds.dataset_builders.CroissantBuilder(
