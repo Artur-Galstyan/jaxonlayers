@@ -11,6 +11,9 @@ dependencies = [
     "jaxtyping>=0.3.2",
 ]
 
+[tool.setuptools]
+packages = ["jaxonlayers"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
@@ -19,3 +22,6 @@ dev = [
     "torch>=2.8.0",
     "pre-commit>=4.3.0",
 ]
+
+[tool.ruff]
+ignore = ["F722"]
