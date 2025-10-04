@@ -49,8 +49,7 @@ def parse_plmsol_fasta(fasta_path):
     sequences = []
     solubility_labels = []
     if not os.path.exists(fasta_path):
-        print(f"Warning: Fasta file not found at {fasta_path}")
-        return sequences, solubility_labels
+        raise FileNotFoundError(f"File {fasta_path} not found.")
     for record in SeqIO.parse(open(fasta_path), "fasta"):
         try:
             solubility_str = record.description.split(" ")[-1].split("-")[-1]
@@ -116,7 +115,6 @@ def get_datasources(percentile: int):
             plmsol_dfs[split_name] = pl.DataFrame(
                 {"sequences": seqs, "labels": binary_labels}
             )
-            print(f"Loaded {len(seqs)} {split_name} samples from PLMSol.")
         else:
             plmsol_dfs[split_name] = pl.DataFrame(
                 {"sequences": [], "labels": []},
@@ -135,32 +133,16 @@ def get_datasources(percentile: int):
     test_df = pl.concat([proteinea_test_df, plmsol_test_df])
     validation_df = pl.concat([proteinea_validation_df, plmsol_validation_df])
 
-    print(f"Total training samples: {len(train_df)}")
-    print(f"Total test samples: {len(test_df)}")
-    print(f"Total validation samples: {len(validation_df)}")
-
-    print("\n--- Finalizing Data Preparation ---")
     train_df = train_df.with_columns(
         pl.col("sequences").str.len_chars().alias("length"),
     )
     max_protein_length = int(
         train_df.select(pl.col("length").quantile(percentile / 100)).item()
     )
-    print(f"Max protein length set to: {max_protein_length}")
 
     train_source = DataFrameDataSource(train_df)
     test_source = DataFrameDataSource(test_df)
     validation_source = DataFrameDataSource(validation_df)
-
-    print("\n--- Label Distribution ---")
-    print("Train DF:\n", train_df.get_column("labels").value_counts())
-    print("Test DF:\n", test_df.get_column("labels").value_counts())
-    print("Validation DF:\n", validation_df.get_column("labels").value_counts())
-
-    print("\n--- Sequence Length Statistics ---")
-    print("Train DF:\n", train_df.describe())
-    print("Test DF:\n", test_df.describe())
-    print("Validation DF:\n", validation_df.describe())
 
     return train_source, test_source, validation_source, max_protein_length
 

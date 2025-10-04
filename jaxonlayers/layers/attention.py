@@ -38,8 +38,8 @@ class MultiheadAttention(eqx.Module):
 
     def __init__(
         self,
-        embed_dim,
-        num_heads,
+        embed_dim: int,
+        num_heads: int,
         dropout=0.0,
         bias=True,
         add_bias_kv=False,
