@@ -4,14 +4,11 @@ import equinox as eqx
 import grain
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 import optax
 import pyarrow.parquet as pq
-import tensorflow_datasets as tfds
 from jaxtyping import Array, Float, Int, PRNGKeyArray
 from PIL import Image
-from tqdm.auto import tqdm
 
 from jaxonlayers.functions.embedding import sinusoidal_embedding
 from jaxonlayers.functions.utils import summarize_model
