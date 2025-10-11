@@ -24,4 +24,4 @@ dev = [
 ]
 
 [tool.ruff]
-ignore = ["F722"]
+ignore = ["F722", "F821"]
