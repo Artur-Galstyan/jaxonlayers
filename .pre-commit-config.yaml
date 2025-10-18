@@ -18,3 +18,4 @@ repos:
           - statedict2pytree>=1.0.1
           - torchvision>=0.23.0
           - torch>=2.8.0
+          - matplotlib

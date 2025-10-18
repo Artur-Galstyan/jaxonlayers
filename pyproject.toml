@@ -21,6 +21,7 @@ dev = [
     "torchvision>=0.23.0",
     "torch>=2.8.0",
     "pre-commit>=4.3.0",
+    "matplotlib>=3.10.7",
 ]
 
 [tool.ruff]
