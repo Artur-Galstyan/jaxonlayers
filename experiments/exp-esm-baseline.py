@@ -8,94 +8,46 @@ import jax.numpy as jnp
 import jaxtyping as jt
 import mlflow
 import optax
-from data import VOCAB, get_dataloaders, get_datasources
+import torch
+from data import get_dataloaders, get_datasources
+from esm.models.esmc import ESMC
+from esm.sdk.api import ESMProtein, LogitsConfig
 from tabulate import tabulate
 from tqdm import tqdm
 
-from jaxonlayers.layers import LayerNorm, MultiheadAttention
-
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-RUN_DESCRIPTION = "MHA"
+RUN_DESCRIPTION = "ESM-C 300M embeddings + simple backbone (no attention)"
 
-
-class TransformerBlock(eqx.Module):
-    mha: MultiheadAttention
-    norm1: LayerNorm
-    norm2: LayerNorm
-    ffn: eqx.nn.MLP
-
-    def __init__(self, embed_dim: int, num_heads: int, key: jt.PRNGKeyArray):
-        k1, k2 = jax.random.split(key, 2)
-        self.mha = MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=0.0,
-            inference=True,
-            key=k1,
-        )
-        self.norm1 = LayerNorm(embed_dim)
-        self.norm2 = LayerNorm(embed_dim)
-        self.ffn = eqx.nn.MLP(
-            in_size=embed_dim,
-            out_size=embed_dim,
-            width_size=embed_dim * 4,
-            depth=1,
-            key=k2,
-        )
-
-    def __call__(
-        self, x: jt.Array, state: eqx.nn.State
-    ) -> tuple[jt.Array, eqx.nn.State]:
-        attn_out, _ = self.mha(x, x, x, need_weights=False)
-        x = x + attn_out
-        # x = self.norm1(x)
-
-        ffn_out = eqx.filter_vmap(self.ffn)(x)
-        x = x + ffn_out
-        # x = self.norm2(x)
-
-        return x, state
+# Global ESM client
+ESM_CLIENT = ESMC.from_pretrained("esmc_300m").to("cuda")  # or "cpu"
 
 
 class SimpleModel(eqx.Module):
-    embedding: eqx.nn.Embedding
-    blocks: list
     mlp: eqx.nn.MLP
     linear: eqx.nn.Linear
 
     def __init__(
         self,
-        n_vocab: int,
-        seq_len: int,
         embedding_size: int,
         out_features: int,
         key: jt.PRNGKeyArray,
     ):
-        k1, k2, k3, k4, k5 = jax.random.split(key, 5)
+        k1, k2 = jax.random.split(key, 2)
         d_inner = 128
-        num_blocks = 3
-
-        self.embedding = eqx.nn.Embedding(n_vocab, embedding_size, key=k2)
-
-        block_keys = jax.random.split(k3, num_blocks)
-        self.blocks = [
-            TransformerBlock(embedding_size, num_heads=8, key=bk) for bk in block_keys
-        ]
 
         self.mlp = eqx.nn.MLP(
             embedding_size, d_inner, width_size=d_inner, depth=4, key=k1
         )
-        self.linear = eqx.nn.Linear(d_inner, out_features, key=k4)
+        self.linear = eqx.nn.Linear(d_inner, out_features, key=k2)
 
     def __call__(
-        self, x: jt.Float[jt.Array, " seq_len"], state: eqx.nn.State, key, inference
+        self,
+        x: jt.Float[jt.Array, "seq_len embed_dim"],
+        state: eqx.nn.State,
+        key,
+        inference,
     ) -> tuple[jt.Array, eqx.nn.State]:
-        x = eqx.filter_vmap(self.embedding)(x)
-
-        for block in self.blocks:
-            x, state = block(x, state)
-
         x = jnp.mean(x, axis=0)
         x = self.mlp(x)
         x = self.linear(x)
@@ -142,7 +94,6 @@ def step_fn(
     opt_state: optax.OptState,
     key: jt.PRNGKeyArray,
 ) -> tuple[SimpleModel, eqx.nn.State, optax.OptState, dict]:
-    print("step_fn JIT")
     inference = False
     (loss_value, (preds, state)), grads = eqx.filter_value_and_grad(
         loss_fn, has_aux=True
@@ -160,7 +111,6 @@ def step_fn(
 
 @eqx.filter_jit
 def eval_step(model: SimpleModel, state: eqx.nn.State, x: jt.Array, y: jt.Array):
-    print("eval_step JIT")
     key, inference = None, True
     logits, state = eqx.filter_vmap(
         model, in_axes=(0, None, None, None), out_axes=(0, None), axis_name="batch"
@@ -177,8 +127,21 @@ def eval_fn(model: SimpleModel, state: eqx.nn.State, loader):
     total_correct = 0
     total_samples = 0
     for data in loader:
+        xs = []
+        for seq in data["sequence"]:
+            protein = ESMProtein(sequence=seq)
+            protein_tensor = ESM_CLIENT.encode(protein)
+            logits_output = ESM_CLIENT.logits(
+                protein_tensor,
+                LogitsConfig(sequence=True, return_embeddings=True),
+            )
+            assert logits_output.embeddings is not None
+            embedding = logits_output.embeddings.squeeze(1).squeeze(0)
+            xs.append(embedding)
+        x = torch.stack(xs)
+        x = jax.dlpack.from_dlpack(x)
         y = data["label"]
-        x = data["features"]
+
         num_samples = x.shape[0]
         batch_loss, batch_correct = eval_step(model, state, x, y)
         total_loss += batch_loss * num_samples
@@ -221,27 +184,37 @@ def train(
         )
 
         for epoch in range(n_epochs):
-            train_data_loader, test_data_loader, validation_data_loader = (
-                get_dataloaders(
-                    train_source=train_source,
-                    test_source=test_source,
-                    validation_source=validation_source,
-                    epoch=epoch,
-                    batch_size=batch_size,
-                    max_protein_length=max_protein_length,
-                )
+            train_loader, test_loader, validation_loader = get_dataloaders(
+                train_source,
+                test_source,
+                validation_source,
+                epoch,
+                batch_size,
+                max_protein_length,
             )
 
             epoch_steps = 0
             epoch_train_metrics = LossMetrics.empty()
             pbar = tqdm(
-                train_data_loader,
+                train_loader,
                 total=steps_per_epoch,
                 desc=f"Epoch {epoch}",
                 leave=False,
             )
             for data in pbar:
-                x = data["features"]
+                xs = []
+                for seq in data["sequence"]:
+                    protein = ESMProtein(sequence=seq)
+                    protein_tensor = ESM_CLIENT.encode(protein)
+                    logits_output = ESM_CLIENT.logits(
+                        protein_tensor,
+                        LogitsConfig(sequence=True, return_embeddings=True),
+                    )
+                    assert logits_output.embeddings is not None
+                    embedding = logits_output.embeddings.squeeze(1).squeeze(0)
+                    xs.append(embedding)
+                x = torch.stack(xs)
+                x = jax.dlpack.from_dlpack(x)
                 y = data["label"]
                 key, step_key = jax.random.split(key)
                 model, state, opt_state, step_metrics = step_fn(
@@ -260,8 +233,8 @@ def train(
                 if epoch_steps >= steps_per_epoch:
                     break
 
-            epoch_eval_metrics = eval_fn(model, state, test_data_loader)
-            epoch_validation_metrics = eval_fn(model, state, validation_data_loader)
+            epoch_eval_metrics = eval_fn(model, state, test_loader)
+            epoch_validation_metrics = eval_fn(model, state, validation_loader)
 
             train_metrics = epoch_train_metrics.compute()
 
@@ -321,7 +294,7 @@ def main():
     mlflow.enable_system_metrics_logging()
 
     out_features = 2
-    embedding_size = 256
+    esm_embedding_dim = 960
     learning_rate = 3e-4
     n_epochs = 50
     batch_size = 128
@@ -335,9 +308,7 @@ def main():
     steps_per_epoch = dataset_size // batch_size
 
     model, state = eqx.nn.make_with_state(SimpleModel)(
-        len(VOCAB),
-        max_protein_length,
-        embedding_size,
+        esm_embedding_dim,
         out_features,
         key=jax.random.key(42),
     )

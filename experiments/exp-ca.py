@@ -12,55 +12,44 @@ from data import VOCAB, get_dataloaders, get_datasources
 from tabulate import tabulate
 from tqdm import tqdm
 
-from jaxonlayers.layers import LayerNorm, MultiheadAttention
-
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-RUN_DESCRIPTION = "MHA"
+RUN_DESCRIPTION = "Cellular Automata encoder with learnable update rules"
 
 
-class TransformerBlock(eqx.Module):
-    mha: MultiheadAttention
-    norm1: LayerNorm
-    norm2: LayerNorm
-    ffn: eqx.nn.MLP
+class CellularAutomataEncoder(eqx.Module):
+    update_mlp: eqx.nn.MLP
+    num_steps: int
 
-    def __init__(self, embed_dim: int, num_heads: int, key: jt.PRNGKeyArray):
-        k1, k2 = jax.random.split(key, 2)
-        self.mha = MultiheadAttention(
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            dropout=0.0,
-            inference=True,
-            key=k1,
-        )
-        self.norm1 = LayerNorm(embed_dim)
-        self.norm2 = LayerNorm(embed_dim)
-        self.ffn = eqx.nn.MLP(
-            in_size=embed_dim,
+    def __init__(self, embed_dim: int, num_steps: int, key: jt.PRNGKeyArray):
+        self.num_steps = num_steps
+        self.update_mlp = eqx.nn.MLP(
+            in_size=embed_dim * 3,
             out_size=embed_dim,
-            width_size=embed_dim * 4,
-            depth=1,
-            key=k2,
+            width_size=embed_dim * 2,
+            depth=2,
+            key=key,
         )
 
-    def __call__(
-        self, x: jt.Array, state: eqx.nn.State
-    ) -> tuple[jt.Array, eqx.nn.State]:
-        attn_out, _ = self.mha(x, x, x, need_weights=False)
-        x = x + attn_out
-        # x = self.norm1(x)
+    def __call__(self, x: jt.Float[jt.Array, "seq_len embed_dim"]) -> jt.Array:
+        state = x
 
-        ffn_out = eqx.filter_vmap(self.ffn)(x)
-        x = x + ffn_out
-        # x = self.norm2(x)
+        for step in range(self.num_steps):
+            padded = jnp.pad(state, ((1, 1), (0, 0)), mode="edge")
 
-        return x, state
+            def update_position(i):
+                neighbors = jnp.concatenate([padded[i], padded[i + 1], padded[i + 2]])
+                return self.update_mlp(neighbors)
+
+            new_state = jax.vmap(update_position)(jnp.arange(state.shape[0]))
+            state = new_state
+
+        return state
 
 
 class SimpleModel(eqx.Module):
     embedding: eqx.nn.Embedding
-    blocks: list
+    ca_encoder: CellularAutomataEncoder
     mlp: eqx.nn.MLP
     linear: eqx.nn.Linear
 
@@ -72,17 +61,13 @@ class SimpleModel(eqx.Module):
         out_features: int,
         key: jt.PRNGKeyArray,
     ):
-        k1, k2, k3, k4, k5 = jax.random.split(key, 5)
+        k1, k2, k3, k4 = jax.random.split(key, 4)
         d_inner = 128
-        num_blocks = 3
 
         self.embedding = eqx.nn.Embedding(n_vocab, embedding_size, key=k2)
-
-        block_keys = jax.random.split(k3, num_blocks)
-        self.blocks = [
-            TransformerBlock(embedding_size, num_heads=8, key=bk) for bk in block_keys
-        ]
-
+        self.ca_encoder = CellularAutomataEncoder(
+            embed_dim=embedding_size, num_steps=10, key=k3
+        )
         self.mlp = eqx.nn.MLP(
             embedding_size, d_inner, width_size=d_inner, depth=4, key=k1
         )
@@ -92,10 +77,7 @@ class SimpleModel(eqx.Module):
         self, x: jt.Float[jt.Array, " seq_len"], state: eqx.nn.State, key, inference
     ) -> tuple[jt.Array, eqx.nn.State]:
         x = eqx.filter_vmap(self.embedding)(x)
-
-        for block in self.blocks:
-            x, state = block(x, state)
-
+        x = self.ca_encoder(x)
         x = jnp.mean(x, axis=0)
         x = self.mlp(x)
         x = self.linear(x)
@@ -142,7 +124,6 @@ def step_fn(
     opt_state: optax.OptState,
     key: jt.PRNGKeyArray,
 ) -> tuple[SimpleModel, eqx.nn.State, optax.OptState, dict]:
-    print("step_fn JIT")
     inference = False
     (loss_value, (preds, state)), grads = eqx.filter_value_and_grad(
         loss_fn, has_aux=True
@@ -160,7 +141,6 @@ def step_fn(
 
 @eqx.filter_jit
 def eval_step(model: SimpleModel, state: eqx.nn.State, x: jt.Array, y: jt.Array):
-    print("eval_step JIT")
     key, inference = None, True
     logits, state = eqx.filter_vmap(
         model, in_axes=(0, None, None, None), out_axes=(0, None), axis_name="batch"
