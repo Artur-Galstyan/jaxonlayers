@@ -41,10 +41,10 @@ class SelectiveStateSpace(eqx.Module):
         self.d_state = d_state
 
         keys = jax.random.split(key, 4)
-
+        proj_dim = self.dt_rank + 2 * self.d_inner * self.d_state
         self.input_proj = eqx.nn.Linear(
-            d_inner,
-            dt_rank + d_state * 2,
+            self.d_model,
+            proj_dim,
             use_bias=use_input_proj_bias,
             key=keys[0],
             dtype=dtype,
@@ -74,13 +74,14 @@ class SelectiveStateSpace(eqx.Module):
         D = self.D.astype(jnp.float32)
 
         delta_b_c = jax.vmap(self.input_proj)(x)
-
         delta, B, C = jnp.split(
-            delta_b_c, [self.dt_rank, self.dt_rank + self.d_state], axis=-1
+            delta_b_c,
+            [self.dt_rank, self.dt_rank + self.d_inner * self.d_state],
+            axis=-1,
         )
 
-        B = B.reshape(L, 1, self.d_state).repeat(self.d_inner, axis=1)
-        C = C.reshape(L, 1, self.d_state).repeat(self.d_inner, axis=1)
+        B = B.reshape(L, self.d_inner, self.d_state)
+        C = C.reshape(L, self.d_inner, self.d_state)
 
         delta = jax.nn.softplus(jax.vmap(self.delta_proj)(delta))
 

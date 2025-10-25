@@ -11,6 +11,9 @@ dependencies = [
     "jaxtyping>=0.3.2",
 ]
 
+[tool.setuptools]
+packages = ["jaxonlayers"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",
@@ -18,4 +21,8 @@ dev = [
     "torchvision>=0.23.0",
     "torch>=2.8.0",
     "pre-commit>=4.3.0",
+    "matplotlib>=3.10.7",
 ]
+
+[tool.ruff]
+ignore = ["F722", "F821"]
