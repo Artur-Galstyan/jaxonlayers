@@ -1,13 +1,13 @@
 [project]
 name = "jaxonlayers"
-version = "0.1.0"
+version = "0.1.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beartype>=0.21.0",
     "equinox>=0.13.0",
-    "jax>=0.7.2",
+    "jax>=0.8.0",
     "jaxtyping>=0.3.2",
 ]
 
