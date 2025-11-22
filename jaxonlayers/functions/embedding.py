@@ -16,6 +16,6 @@ def sinusoidal_embedding(
     )
 
     time_args = t * embedding_freqs
-    embedding = jnp.concatenate([jnp.sin(time_args), jnp.cos(time_args)])
+    embedding = jnp.concatenate([jnp.sin(time_args), jnp.cos(time_args)], axis=-1)
 
     return embedding
