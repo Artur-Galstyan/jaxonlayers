@@ -6,19 +6,17 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import torch
-from jaxonlayers.functions.utils import default_floating_dtype
-from jaxonlayers.layers import BatchNorm, ConvNormActivation, SqueezeExcitation
 from statedict2pytree import (
     convert,
     move_running_fields_to_the_end,
     pytree_to_fields,
     state_dict_to_fields,
 )
-from torch.nn.modules import BatchNorm2d
-from torchvision.models.efficientnet import MBConv as TorchMBConv
-from torchvision.models.efficientnet import MBConvConfig as TorchMBConvConfig
 from torchvision.ops.misc import Conv2dNormActivation as TorchConv2dNormActivation
 from torchvision.ops.misc import SqueezeExcitation as TorchSqueezeExcitation
+
+from jaxonlayers.functions.utils import default_floating_dtype
+from jaxonlayers.layers import BatchNorm, ConvNormActivation, SqueezeExcitation
 
 
 @pytest.mark.parametrize(
