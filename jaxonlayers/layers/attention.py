@@ -131,6 +131,7 @@ class MultiheadAttention(eqx.Module):
         attn_mask: Array | None = None,
         average_attn_weights: bool = True,
         is_causal: bool = False,
+        dropout_key: PRNGKeyArray | None = None,
     ) -> tuple[Array, Array | None]:
         key_padding_mask = canonical_mask(
             mask=key_padding_mask,
@@ -171,6 +172,7 @@ class MultiheadAttention(eqx.Module):
                 v_proj_weight=self.v_proj_weight,
                 average_attn_weights=average_attn_weights,
                 is_causal=is_causal,
+                dropout_key=dropout_key,
             )
         else:
             attn_output, attn_output_weights = multi_head_attention_forward(
@@ -193,6 +195,7 @@ class MultiheadAttention(eqx.Module):
                 attn_mask=attn_mask,
                 average_attn_weights=average_attn_weights,
                 is_causal=is_causal,
+                dropout_key=dropout_key,
             )
 
         return attn_output, attn_output_weights
