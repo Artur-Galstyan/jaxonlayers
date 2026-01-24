@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+from jaxtyping import Array, Bool
 
 
 def canonical_mask(
@@ -50,7 +51,27 @@ def canonical_attn_mask(attn_mask, query_dtype=jnp.float32):
     )
 
 
+def make_causal_mask(seq_len: int) -> Bool[Array, "seq_len seq_len"]:
+    """
+    Returns a boolean mask.
+
+    Example:
+    [[True,  False, False],
+     [True,  True,  False],
+     [True,  True,  True ]]
+    """
+    return jnp.tril(jnp.ones((seq_len, seq_len), dtype=jnp.bool_))
+
+
 def build_attention_mask(context_length: int):
+    """
+    Returns a numerical matrix with 0 and -inf.
+
+    Example:
+    [[ 0,   -inf, -inf],
+     [ 0,    0,   -inf],
+     [ 0,    0,    0  ]]
+    """
     mask = jnp.tril(jnp.zeros((context_length, context_length)))
     upper = jnp.triu(jnp.full((context_length, context_length), float("-inf")), k=1)
 

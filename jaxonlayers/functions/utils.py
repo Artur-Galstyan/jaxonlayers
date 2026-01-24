@@ -5,7 +5,7 @@ from jaxtyping import PyTree
 
 
 def default_floating_dtype():
-    if jax.config.jax_enable_x64:  # pyright: ignore
+    if jax.config.read("jax_enable_x64"):  # pyright: ignore
         return jnp.float64
     else:
         return jnp.float32
