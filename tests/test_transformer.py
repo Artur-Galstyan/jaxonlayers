@@ -25,12 +25,12 @@ class TestTransformerEncoderLayer:
     )
     def test_masking(self, is_causal, use_explicit_mask):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         seq_len = 10
 
         layer = TransformerEncoderLayer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -43,12 +43,12 @@ class TestTransformerEncoderLayer:
 
     def test_jit_no_retrace(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         seq_len = 10
 
         layer = TransformerEncoderLayer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -84,13 +84,13 @@ class TestTransformerDecoderLayer:
         self, tgt_is_causal, memory_is_causal, use_tgt_mask, use_memory_mask
     ):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         tgt_len = 10
         src_len = 12
 
         layer = TransformerDecoderLayer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -116,13 +116,13 @@ class TestTransformerDecoderLayer:
 
     def test_with_process_heads(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         tgt_len = 10
         src_len = 12
 
         layer = TransformerDecoderLayer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -144,13 +144,13 @@ class TestTransformerDecoderLayer:
 
     def test_jit_no_retrace(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         tgt_len = 10
         src_len = 12
 
         layer = TransformerDecoderLayer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -184,13 +184,13 @@ class TestTransformerEncoder:
     )
     def test_masking(self, is_causal, use_explicit_mask):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         num_layers = 3
         seq_len = 10
 
         encoder = TransformerEncoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_layers,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -204,13 +204,13 @@ class TestTransformerEncoder:
 
     def test_with_process_heads(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         num_layers = 3
         seq_len = 10
 
         encoder = TransformerEncoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_layers,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -226,13 +226,13 @@ class TestTransformerEncoder:
 
     def test_jit_no_retrace(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         num_layers = 3
         seq_len = 10
 
         encoder = TransformerEncoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_layers,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -269,14 +269,14 @@ class TestTransformerDecoder:
         self, tgt_is_causal, memory_is_causal, use_tgt_mask, use_memory_mask
     ):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         num_layers = 3
         tgt_len = 10
         src_len = 12
 
         decoder = TransformerDecoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_layers,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -303,14 +303,14 @@ class TestTransformerDecoder:
 
     def test_with_process_heads(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         num_layers = 3
         tgt_len = 10
         src_len = 12
 
         decoder = TransformerDecoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_layers,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -333,14 +333,14 @@ class TestTransformerDecoder:
 
     def test_jit_no_retrace(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         num_layers = 3
         tgt_len = 10
         src_len = 12
 
         decoder = TransformerDecoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_layers,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -383,13 +383,13 @@ class TestTransformer:
         use_memory_mask,
     ):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         src_len = 12
         tgt_len = 10
 
         transformer = Transformer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -418,13 +418,13 @@ class TestTransformer:
 
     def test_with_process_heads(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         src_len = 12
         tgt_len = 10
 
         transformer = Transformer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )
@@ -455,13 +455,13 @@ class TestTransformer:
     )
     def test_activations(self, activation):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         src_len = 12
         tgt_len = 10
 
         transformer = Transformer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             activation=activation,
             key=jax.random.key(0),
             dtype=jnp.float32,
@@ -475,13 +475,13 @@ class TestTransformer:
 
     def test_jit_no_retrace(self):
         d_model = 64
-        nhead = 4
+        n_heads = 4
         src_len = 12
         tgt_len = 10
 
         transformer = Transformer(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             key=jax.random.key(0),
             dtype=jnp.float32,
         )

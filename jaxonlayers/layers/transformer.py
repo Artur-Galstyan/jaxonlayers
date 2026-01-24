@@ -40,7 +40,7 @@ class TransformerEncoderLayer(eqx.Module):
     def __init__(
         self,
         d_model: int,
-        nhead: int,
+        n_heads: int,
         dim_feedforward: int = 2048,
         dropout_p: float = 0.1,
         activation: Callable = jax.nn.relu,
@@ -50,7 +50,7 @@ class TransformerEncoderLayer(eqx.Module):
         inference: bool = False,
         *,
         key: PRNGKeyArray,
-        dtype: Any,
+        dtype: Any = None,
     ):
         if dtype is None:
             dtype = default_floating_dtype()
@@ -58,7 +58,7 @@ class TransformerEncoderLayer(eqx.Module):
         self.inference = inference
         mha_key, lin1_key, lin2_key = jax.random.split(key, 3)
         self.self_attn = eqx.nn.MultiheadAttention(
-            nhead,
+            n_heads,
             d_model,
             dropout_p=dropout_p,
             use_query_bias=use_bias,
@@ -208,7 +208,7 @@ class TransformerDecoderLayer(eqx.Module):
     def __init__(
         self,
         d_model: int,
-        nhead: int,
+        n_heads: int,
         dim_feedforward: int = 2048,
         dropout_p: float = 0.1,
         activation: Callable = jax.nn.relu,
@@ -218,7 +218,7 @@ class TransformerDecoderLayer(eqx.Module):
         inference: bool = False,
         *,
         key: PRNGKeyArray,
-        dtype: Any,
+        dtype: Any = None,
     ):
         if dtype is None:
             dtype = default_floating_dtype()
@@ -227,7 +227,7 @@ class TransformerDecoderLayer(eqx.Module):
 
         mha_key1, mha_key2, lin1_key, lin2_key = jax.random.split(key, 4)
         self.self_attn = eqx.nn.MultiheadAttention(
-            nhead,
+            n_heads,
             d_model,
             dropout_p=dropout_p,
             use_query_bias=use_bias,
@@ -239,7 +239,7 @@ class TransformerDecoderLayer(eqx.Module):
             dtype=dtype,
         )
         self.multihead_attn = eqx.nn.MultiheadAttention(
-            nhead,
+            n_heads,
             d_model,
             dropout_p=dropout_p,
             use_query_bias=use_bias,
@@ -455,7 +455,7 @@ class TransformerEncoder(eqx.Module):
     def __init__(
         self,
         d_model: int,
-        nhead: int,
+        n_heads: int,
         num_layers: int = 6,
         dim_feedforward: int = 2048,
         dropout_p: float = 0.1,
@@ -467,7 +467,7 @@ class TransformerEncoder(eqx.Module):
         inference: bool = False,
         *,
         key: PRNGKeyArray,
-        dtype: Any,
+        dtype: Any = None,
     ):
         if dtype is None:
             dtype = default_floating_dtype()
@@ -478,7 +478,7 @@ class TransformerEncoder(eqx.Module):
         self.layers = [
             TransformerEncoderLayer(
                 d_model=d_model,
-                nhead=nhead,
+                n_heads=n_heads,
                 dim_feedforward=dim_feedforward,
                 dropout_p=dropout_p,
                 activation=activation,
@@ -534,7 +534,7 @@ class TransformerDecoder(eqx.Module):
     def __init__(
         self,
         d_model: int,
-        nhead: int,
+        n_heads: int,
         num_layers: int = 6,
         dim_feedforward: int = 2048,
         dropout_p: float = 0.1,
@@ -546,7 +546,7 @@ class TransformerDecoder(eqx.Module):
         inference: bool = False,
         *,
         key: PRNGKeyArray,
-        dtype: Any,
+        dtype: Any = None,
     ):
         if dtype is None:
             dtype = default_floating_dtype()
@@ -557,7 +557,7 @@ class TransformerDecoder(eqx.Module):
         self.layers = [
             TransformerDecoderLayer(
                 d_model=d_model,
-                nhead=nhead,
+                n_heads=n_heads,
                 dim_feedforward=dim_feedforward,
                 dropout_p=dropout_p,
                 activation=activation,
@@ -627,7 +627,7 @@ class Transformer(eqx.Module):
     def __init__(
         self,
         d_model: int,
-        nhead: int,
+        n_heads: int,
         num_encoder_layers: int = 6,
         num_decoder_layers: int = 6,
         dim_feedforward: int = 2048,
@@ -639,7 +639,7 @@ class Transformer(eqx.Module):
         inference: bool = False,
         *,
         key: PRNGKeyArray,
-        dtype: Any,
+        dtype: Any = None,
     ):
         if dtype is None:
             dtype = default_floating_dtype()
@@ -650,7 +650,7 @@ class Transformer(eqx.Module):
 
         self.encoder = TransformerEncoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_encoder_layers,
             dim_feedforward=dim_feedforward,
             dropout_p=dropout_p,
@@ -666,7 +666,7 @@ class Transformer(eqx.Module):
 
         self.decoder = TransformerDecoder(
             d_model=d_model,
-            nhead=nhead,
+            n_heads=n_heads,
             num_layers=num_decoder_layers,
             dim_feedforward=dim_feedforward,
             dropout_p=dropout_p,
