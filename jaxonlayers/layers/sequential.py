@@ -56,7 +56,7 @@ class BatchedLinear(eqx.Module):
         self.use_bias = use_bias
 
     def __call__(
-        self, x: Float[Array, "*batch in_features"]
+        self, x: Float[Array, "*batch in_features"], key=None
     ) -> Float[Array, "*batch out_features"]:
         input_shape = x.shape
 
