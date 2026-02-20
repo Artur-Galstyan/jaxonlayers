@@ -12,6 +12,13 @@ from jaxonlayers.functions.utils import default_floating_dtype
 
 
 class MultiheadAttention(eqx.Module):
+    """
+    This MHA implementation is meant to be a 1:1 clone of the PyTorch version.
+
+    Unless you really need it to be exactly like the PyTorch version, prefer using
+    the MHA implementation from eqx.nn.MultiheadAttention instead!
+    """
+
     q_proj_weight: Array | None
     k_proj_weight: Array | None
     v_proj_weight: Array | None
